@@ -1,0 +1,13 @@
+sample		treatment	type
+SRR6825935	control		paired-end
+SRR6825934	control         paired-end
+SRR6825938	control         paired-end
+SRR6825926	control         paired-end
+SRR6825925	control         paired-end
+SRR6825930	control         paired-end
+SRR6825939	HeatShock         paired-end
+SRR6825941	HeatShock         paired-end
+SRR6825940	HeatShock         paired-end
+SRR6825933	HeatShock         paired-end
+SRR6825932	HeatShock         paired-end
+SRR6825928	HeatShock         paired-end

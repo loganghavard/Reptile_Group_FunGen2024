@@ -8,10 +8,10 @@
 ## 	then run the script by using "run_script [script name]"
 ## 	suggested paramenters are below to submit this script.
 ##  You may need to increase these for bigger datasets
-## 		queue: medium
-##		core: 6
-##		time limit (HH:MM:SS): 18:00:00 
-##		Memory: 12gb
+## 		queue: large
+##		core: 8
+##		time limit (HH:MM:SS): 48:00:00 
+##		Memory: 120gb
 ##		
 ###############################################
 

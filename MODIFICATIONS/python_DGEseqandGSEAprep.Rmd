@@ -1,0 +1,190 @@
+---
+title: "Ref_Python_DGEseqandGSEAprep"
+output: html_notebook
+---
+
+```{r}
+####  DESeq2 Script for Differential Gene Expression Analysis in 
+      # Functional Genomics BIOL: 6850
+### Resources and Citations:
+# STANDARD PIPELINE
+#Love et al 2016 DESeq2 GenomeBiology
+# https://bioconductor.riken.jp/packages/2.14/bioc/vignettes/DESeq2/inst/doc/DESeq2.pdf
+# http://master.bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html
+
+## Load the DESeq2 library 
+library(DESeq2)
+
+##########   1.3 Input data   ##############
+
+### Input the count data, the gene(/transcript) count matrix and labels **this count data already has WGCNA symbols used
+countdata <- as.matrix(read.csv("python_gene_count_matrix.csv", row.names="gene_id"))
+dim(countdata)
+head(countdata)
+
+### Input the meta data or phenotype data
+coldata <-(read.csv("LIZARD_pheno_meta.csv", header=TRUE, row.names=1))
+dim(coldata)
+head(coldata)
+
+#Check all sample IDs in colData are also in CountData and match their orders
+all(rownames(coldata) %in% colnames(countdata))
+countdata <- countdata[, rownames(coldata)]
+all(rownames(coldata) == colnames(countdata))
+
+## Create the DESEQ dataset and define the statistical model (page 6 of the manual)
+dds <- DESeqDataSetFromMatrix(countData = countdata, colData=coldata,  design = ~treatment)
+dds
+
+##### Prefiltering  Manual - starting at  1.3.6 
+dds <- dds[ rowSums(counts(dds)) > 20, ]
+dds
+dim(dds)
+
+## set factors for statistical analyses
+dds$condition <- factor(dds$treatment, levels=c("control","heat_shock"))
+
+######     1.4 Differential expression analysis
+dds <- DESeq(dds)
+res <- results(dds)
+res
+
+resOrdered <- res[order(res$padj),]
+resOrdered
+summary(res)
+sum(res$padj < 0.1, na.rm=TRUE)
+
+res05 <- results(dds, alpha=0.05)
+summary(res05)
+sum(res05$padj < 0.05, na.rm=TRUE)
+
+###    1.5.1 MA-plot
+plotMA(res, main="DESeq2", ylim=c(-8,8))
+
+##  1.5.2 Plot counts - sanity check!
+## plotCounts(dds, gene="FUN_025750", intgroup="treatment")
+## plotCounts(dds, gene=which.min(res$padj), intgroup="treatment")
+## dds
+  
+##  Write your results to a file 
+write.csv(as.data.frame(resOrdered), file="DGESeq_results.csv")   
+```
+
+
+```{r}
+## 2.1.2 Extracting transformed values
+rld <- rlog(dds)
+vsd <- varianceStabilizingTransformation(dds)
+head(assay(rld), 3)
+  
+library("pheatmap")
+topVarGenes <- head(order(rowVars(assay(vsd)), decreasing = TRUE), 50)
+mat  <- assay(vsd)[ topVarGenes, ]
+mat  <- mat - rowMeans(mat)
+anno <- as.data.frame(colData(vsd)[, "treatment", drop=FALSE])
+pheatmap(mat, annotation_col = anno)
+  
+# 2.2.2 Heatmap of the sample-to-sample distances
+sampleDists <- dist(t(assay(rld)))
+library("RColorBrewer")
+sampleDistMatrix <- as.matrix(sampleDists)
+rownames(sampleDistMatrix) <- paste(rld$treatment)
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pheatmap(mat, annotation_col = anno)
+  
+# 2.2.3 Principal component plot of the samples
+plotPCA(rld, intgroup=c("treatment"))
+
+```
+
+
+
+
+```{r}
+############ Preparing Data for GSEA and Cytoscape.  #############
+  
+### Merge 'gene names' with DGE results by Gene Model
+  
+## Import Annotation file with results from Blast to databases
+##Anno <- read.csv("SceUnd1.0_top24_CompliedAnnotation.csv", stringsAsFactors = FALSE, na.strings=c("", “NA”))
+  
+## Import the DGE results file make sure the gene model name is 'gene_id' to match annotation file
+## For GSEA- use HGCNA gene ID symbols. Have to merge ANNO and DGESeq_results by gene ID. Must merge on ID type used in gene matrix file. (FUN ID’s here). Rename ID column in DGEresults to be the same as annotation file with the same ID type (FUN ID here). Then this will merge annotation data and DGEresults .csv. It will merge all columns and be in a temp dataframe called DGE_Anno. Next you will only save the HGNC containing row (look at name in file)(GeneID here) and the “rank” column. 
+##for python! This one is different, because the HGNC annotations are used in the count matrix originally- though they are in the format gene/exon-HGNC|HGNC or -LOC|LOC. Somehow I will need to save only the first variable after - and before | in each line. Then delete all labels containing “LOC” and replace that cell with NA. But merging annotation and DGESeq_results in pointless for these files.
+
+#DGEresults <- read.csv("DGESeq_results.csv", stringsAsFactors = FALSE)
+
+## Rename first column so it matches "gene_id" in annotation file
+##names(DGEresults)[1]<- "gene_id" 
+
+#Merge anno with DGE results
+##DGE_Anno <- merge(Anno,DGEresults,by="gene_id",all.y = FALSE)
+
+```
+
+```{r}
+###this step is added to clean the dge_results gene names to contain only HGCN or NA.
+# Load the necessary library
+library(tidyverse)
+
+# Set the path to your DGE results CSV file
+file_path <- "DGESeq_results.csv"
+
+# Read the CSV file into a data frame
+dge_data <- read_csv(file_path, show_col_types = FALSE)
+
+# Define a function to clean the gene symbols
+clean_gene_symbol <- function(gene_symbol) {
+  # Use 'ifelse' for vectorized conditional operation
+  ifelse(startsWith(gene_symbol, "gene-LOC"), 
+         NA, # Return NA if the symbol starts with 'gene-LOC'
+         sub("^gene-([A-Za-z0-9]+)\\|.*", "\\1", gene_symbol)) # Extract the gene symbol
+}
+
+# Apply the function to clean the gene symbols in the first column
+dge_data <- dge_data %>%
+  mutate(across(1, clean_gene_symbol))
+
+# Save the cleaned data to a new CSV file
+cleaned_file_path <- "cleaned_dge_results.csv"
+write_csv(dge_data, cleaned_file_path)
+
+```
+
+
+```{r}
+############################# Make ranked list for GSEA ####################
+## data rather than reading the DGE_Anno here, we will look at the cleaned dge results with HGCN symbols; the equivalent of DGE_Anno is other scripts
+library(dplyr)
+
+# Read the cleaned DGE results into an R data frame
+cleaned_dge_data <- read_csv("cleaned_dge_results.csv", show_col_types = FALSE)
+
+# Create the rank column based on log2FoldChange and pvalue
+cleaned_dge_data <- cleaned_dge_data %>%
+  mutate(rank = sign(log2FoldChange) * -log10(pvalue)) %>%
+  na.omit() # Omit rows with NAs
+
+# Select the Gene_Symbol and rank columns
+DGErank <- select(cleaned_dge_data, Gene_Symbol, rank)
+
+#DGE_Anno_Rank <-  within(DGE_Anno, rank <- sign(log2FoldChange) * -log10(pvalue))
+#DGErank = subset(DGE_Anno_Rank, select = c(GeneID, rank) )
+#DGErank_withName <- na.omit(DGErank)
+
+##write.table(as.data.frame(DGErank_withName), file="DGErank_withname2.txt", row.names=FALSE)
+write.table(DGErank, file="DGErank_withname_forGSEA.txt", sep="\t", row.names=FALSE, quote=FALSE)
+
+####  We also need the normalized expression DATA
+nt <- normTransform(dds) # defaults to log2(x+1)
+NormTransExp<-assay(nt)
+gene <-gsub("^[^-]+-", "", rownames(NormTransExp))
+NormTransExpIDs  <-cbind(gene,NormTransExp)
+
+write.table(as.data.frame(NormTransExpIDs), file="NormTransExpIDs.rnk", row.names=FALSE)
+```
+
+
+
+
+
